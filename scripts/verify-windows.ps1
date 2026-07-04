@@ -19,6 +19,20 @@ function Assert-Dir {
   }
 }
 
+function Invoke-Checked {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$File,
+    [string[]]$Arguments = @()
+  )
+  $output = & $File @Arguments 2>&1
+  $code = $LASTEXITCODE
+  if ($code -ne 0) {
+    throw "Command failed ($code): $File $($Arguments -join ' ')`n$($output -join "`n")"
+  }
+  return $output
+}
+
 $root = (Resolve-Path -LiteralPath $PortableRoot).Path
 $openclawDir = Join-Path $root "engines\openclaw"
 $hermesBin = Join-Path $root "engines\hermes\bin"
@@ -61,12 +75,15 @@ try {
   $env:UV_PYTHON_INSTALL_DIR = Join-Path $root "runtimes\uv\python"
   $env:PATH = "$hermesBin;$openclawDir;$uvBin;$gitCmd;$env:SystemRoot\System32;$env:SystemRoot"
 
-  $uv = & (Join-Path $uvBin "uv.exe") --version
-  $git = & (Join-Path $gitCmd "git.exe") --version
-  $hermes = & $hermesCmd version
+  $uv = Invoke-Checked -File (Join-Path $uvBin "uv.exe") -Arguments @("--version")
+  $git = Invoke-Checked -File (Join-Path $gitCmd "git.exe") -Arguments @("--version")
+  $hermes = Invoke-Checked -File $hermesCmd -Arguments @("version")
   $openclaw = & $openclawCmd --version 2>$null
   if (-not $openclaw) {
     $openclaw = & $openclawCmd 2>$null
+  }
+  if ($LASTEXITCODE -ne 0) {
+    throw "OpenClaw check failed: $openclawCmd"
   }
 
   [pscustomobject]@{

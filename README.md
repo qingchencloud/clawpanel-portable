@@ -22,7 +22,7 @@ ClawPanelPortable-macOS-x64-full-v0.18.5.zip
 | 组件 | 版本 |
 |---|---|
 | ClawPanel | `0.18.5` |
-| OpenClaw zh | `2026.6.11-zh.1` |
+| OpenClaw zh standalone | `2026.6.1-zh.1` |
 | Hermes Agent | `0.18.0` / `v2026.7.1` |
 | uv | `0.7.12` |
 
@@ -73,6 +73,22 @@ ClawPanelPortable/
 
 ```powershell
 .\scripts\verify-windows.ps1 -PortableRoot .\output\windows-x64\ClawPanelPortable
+```
+
+## Tag 发版
+
+推送 tag 会自动构建 Windows x64 完整包，并把 zip 与 SHA256 上传到 GitHub Release：
+
+```bash
+git tag v0.18.5-portable.1
+git push origin v0.18.5-portable.1
+```
+
+发布产物：
+
+```text
+ClawPanelPortable-Windows-x64-full-v0.18.5.zip
+ClawPanelPortable-Windows-x64-full-v0.18.5.zip.sha256.json
 ```
 
 写入 U 盘：

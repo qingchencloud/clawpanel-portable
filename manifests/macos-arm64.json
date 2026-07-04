@@ -8,10 +8,10 @@
   },
   "openclaw": {
     "edition": "zh",
-    "version": "2026.6.11-zh.1",
+    "version": "2026.6.1-zh.1",
     "standaloneRepository": "qingchencloud/openclaw-standalone",
-    "standaloneTag": "v2026.6.11-zh.1",
-    "assetPattern": "*macos*arm64*.tar.gz"
+    "standaloneTag": "v2026.6.1-zh.1",
+    "assetPattern": "openclaw-zh-*-mac-arm64.tar.gz"
   },
   "hermes": {
     "version": "0.18.0",

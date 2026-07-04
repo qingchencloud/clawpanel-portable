@@ -29,6 +29,7 @@ function Require-Command {
 
 function Download-File {
   param([string]$Url, [string]$OutFile)
+  Write-Host "Downloading: $Url"
   Invoke-WebRequest -Uri $Url -OutFile $OutFile -Headers @{ "User-Agent" = "ClawPanelPortableBuilder" }
 }
 
@@ -92,6 +93,7 @@ function Resolve-ClawPanelExe {
 
 function Install-Uv {
   param($Manifest, [string]$WorkDir, [string]$UvBin)
+  Write-Host "Installing uv $($Manifest.uv.version)..."
   $zip = Join-Path $WorkDir "uv.zip"
   Download-File -Url $Manifest.uv.url -OutFile $zip
   $extract = Join-Path $WorkDir "uv"
@@ -106,6 +108,7 @@ function Install-Uv {
 
 function Install-MinGit {
   param($Manifest, [string]$WorkDir, [string]$GitRoot)
+  Write-Host "Installing MinGit..."
   $release = Invoke-RestMethod -Uri $Manifest.git.apiUrl -Headers @{ "User-Agent" = "ClawPanelPortableBuilder" }
   $asset = $release.assets |
     Where-Object {
@@ -127,6 +130,7 @@ function Install-MinGit {
 
 function Install-OpenClaw {
   param($Manifest, [string]$WorkDir, [string]$OpenClawDir)
+  Write-Host "Installing OpenClaw standalone $($Manifest.openclaw.version)..."
   $asset = Download-GitHubAsset `
     -Repo $Manifest.openclaw.standaloneRepository `
     -Tag $Manifest.openclaw.standaloneTag `
@@ -145,6 +149,7 @@ function Install-OpenClaw {
 
 function Install-Hermes {
   param($Manifest, [string]$Root, [string]$UvBin, [string]$GitCmd)
+  Write-Host "Installing Hermes Agent $($Manifest.hermes.version) ($($Manifest.hermes.tag))..."
   $uvExe = Join-Path $UvBin "uv.exe"
   $hermesToolDir = Join-Path $Root "engines\hermes"
   $hermesBin = Join-Path $hermesToolDir "bin"
@@ -187,19 +192,72 @@ function Install-Hermes {
     $env:UV_PYTHON_INSTALL_DIR = $oldPython
   }
 
-  $wrapper = Join-Path $hermesBin "hermes.cmd"
+  Remove-Item -LiteralPath (Join-Path $hermesBin "hermes.exe") -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $hermesBin "hermes-agent.exe") -Force -ErrorAction SilentlyContinue
+  Remove-Item -LiteralPath (Join-Path $hermesBin "hermes-acp.exe") -Force -ErrorAction SilentlyContinue
+
+  $pyvenv = Join-Path $hermesToolDir "hermes-agent\pyvenv.cfg"
+  $versionInfo = "3.11"
+  if (Test-Path -LiteralPath $pyvenv -PathType Leaf) {
+    $match = Select-String -LiteralPath $pyvenv -Pattern "^\s*version_info\s*=\s*(.+)\s*$" | Select-Object -First 1
+    if ($match) {
+      $versionInfo = $match.Matches[0].Groups[1].Value.Trim()
+    }
+  }
+
+  Write-HermesCmdWrapper `
+    -Path (Join-Path $hermesBin "hermes.cmd") `
+    -ImportPath "hermes_cli.main" `
+    -FunctionName "main" `
+    -UvVersion $Manifest.uv.version `
+    -PythonVersionInfo $versionInfo
+  Write-HermesCmdWrapper `
+    -Path (Join-Path $hermesBin "hermes-agent.cmd") `
+    -ImportPath "run_agent" `
+    -FunctionName "main" `
+    -UvVersion $Manifest.uv.version `
+    -PythonVersionInfo $versionInfo
+  Write-HermesCmdWrapper `
+    -Path (Join-Path $hermesBin "hermes-acp.cmd") `
+    -ImportPath "acp_adapter.entry" `
+    -FunctionName "main" `
+    -UvVersion $Manifest.uv.version `
+    -PythonVersionInfo $versionInfo
+}
+
+function Write-HermesCmdWrapper {
+  param(
+    [string]$Path,
+    [string]$ImportPath,
+    [string]$FunctionName,
+    [string]$UvVersion,
+    [string]$PythonVersionInfo
+  )
   @(
     "@echo off",
     "setlocal",
-    "set ROOT=%~dp0..\..",
+    "set ROOT=%~dp0..\..\..",
     "set HERMES_HOME=%ROOT%\data\hermes",
     "set UV_TOOL_DIR=%ROOT%\engines\hermes",
     "set UV_TOOL_BIN_DIR=%ROOT%\engines\hermes\bin",
     "set UV_CACHE_DIR=%ROOT%\runtimes\uv\cache",
     "set UV_PYTHON_INSTALL_DIR=%ROOT%\runtimes\uv\python",
     "set PATH=%ROOT%\engines\hermes\bin;%ROOT%\runtimes\git\cmd;%ROOT%\runtimes\uv\bin;%SystemRoot%\System32;%SystemRoot%",
-    """%ROOT%\engines\hermes\hermes-agent\Scripts\python.exe"" -m hermes_cli %*"
-  ) | Set-Content -LiteralPath $wrapper -Encoding ASCII
+    "for /d %%D in (""%ROOT%\runtimes\uv\python\cpython-*"") do set ""PYTHON_HOME=%%~fD""",
+    "if not defined PYTHON_HOME (",
+    "  echo Portable Python runtime not found. 1>&2",
+    "  exit /b 1",
+    ")",
+    "(",
+    "  echo home = %PYTHON_HOME%",
+    "  echo implementation = CPython",
+    "  echo uv = $UvVersion",
+    "  echo version_info = $PythonVersionInfo",
+    "  echo include-system-site-packages = false",
+    ") > ""%ROOT%\engines\hermes\hermes-agent\pyvenv.cfg""",
+    """%ROOT%\engines\hermes\hermes-agent\Scripts\python.exe"" -c ""from $ImportPath import $FunctionName; raise SystemExit($FunctionName())"" %*",
+    "exit /b %ERRORLEVEL%"
+  ) | Set-Content -LiteralPath $Path -Encoding ASCII
 }
 
 $manifest = Read-JsonFile -Path $ManifestPath
@@ -234,6 +292,7 @@ Copy-Item -LiteralPath (Join-Path $repoRoot "templates\portable.json") -Destinat
 Copy-Item -LiteralPath (Join-Path $repoRoot "templates\README-USB.md") -Destination (Join-Path $stage "README-USB.md") -Force
 
 $panelExe = Resolve-ClawPanelExe -Repo $ClawPanelRepo -Exe $ClawPanelExe
+Write-Host "Using ClawPanel exe: $panelExe"
 Copy-Item -LiteralPath $panelExe -Destination (Join-Path $stage "ClawPanel.exe") -Force
 
 '{ "accessPassword": "123456", "engine": "openclaw" }' |
@@ -261,7 +320,16 @@ $zip = Join-Path $outputRoot ("{0}-v{1}.zip" -f $manifest.bundleName, $manifest.
 if (Test-Path -LiteralPath $zip) {
   Remove-Item -LiteralPath $zip -Force
 }
-Compress-Archive -LiteralPath $stage -DestinationPath $zip -Force
+Write-Host "Creating zip: $zip"
+$zipParent = Join-Path $outputRoot "windows-x64"
+if (Get-Command tar -ErrorAction SilentlyContinue) {
+  & tar -a -cf $zip -C $zipParent "ClawPanelPortable"
+  if ($LASTEXITCODE -ne 0) {
+    throw "tar zip creation failed."
+  }
+} else {
+  Compress-Archive -LiteralPath $stage -DestinationPath $zip -Force
+}
 Get-FileHash -Algorithm SHA256 -LiteralPath $zip |
   Select-Object Algorithm, Hash, Path |
   ConvertTo-Json -Depth 3 |

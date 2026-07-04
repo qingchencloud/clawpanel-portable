@@ -33,3 +33,7 @@
 ```
 
 脚本不会格式化 U 盘，只负责解压和校验。
+
+## 自动发版
+
+推送 `v*-portable.*` tag 后，GitHub Actions 会构建 Windows x64 完整包并创建 Release。

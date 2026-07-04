@@ -34,7 +34,14 @@ $temp = Join-Path $env:TEMP ("clawpanel-portable-write-" + [guid]::NewGuid().ToS
 New-Item -ItemType Directory -Force -Path $temp | Out-Null
 
 try {
-  Expand-Archive -LiteralPath $archivePath -DestinationPath $temp -Force
+  if (Get-Command tar -ErrorAction SilentlyContinue) {
+    & tar -xf $archivePath -C $temp
+    if ($LASTEXITCODE -ne 0) {
+      throw "Archive extraction failed: $archivePath"
+    }
+  } else {
+    Expand-Archive -LiteralPath $archivePath -DestinationPath $temp -Force
+  }
   $inner = Join-Path $temp "ClawPanelPortable"
   if (-not (Test-Path -LiteralPath $inner -PathType Container)) {
     $dirs = Get-ChildItem -LiteralPath $temp -Directory
@@ -45,7 +52,15 @@ try {
     }
   }
 
-  Copy-Item -LiteralPath $inner -Destination $TargetRoot -Recurse
+  New-Item -ItemType Directory -Force -Path $TargetRoot | Out-Null
+  if (Get-Command robocopy -ErrorAction SilentlyContinue) {
+    & robocopy $inner $TargetRoot /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    if ($LASTEXITCODE -gt 7) {
+      throw "robocopy failed with exit code $LASTEXITCODE"
+    }
+  } else {
+    Copy-Item -LiteralPath (Join-Path $inner "*") -Destination $TargetRoot -Recurse -Force
+  }
   & (Join-Path $PSScriptRoot "verify-windows.ps1") -PortableRoot $TargetRoot
 } finally {
   Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue

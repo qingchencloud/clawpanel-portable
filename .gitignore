@@ -1,0 +1,8 @@
+output/
+work/
+*.zip
+*.7z
+*.dmg
+*.log
+.DS_Store
+Thumbs.db

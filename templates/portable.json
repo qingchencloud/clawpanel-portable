@@ -1,0 +1,6 @@
+{
+  "mode": "portable",
+  "dataDir": "./data",
+  "enginesDir": "./engines",
+  "runtimesDir": "./runtimes"
+}

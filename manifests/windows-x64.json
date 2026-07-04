@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "platform": "windows-x64",
+  "bundleName": "ClawPanelPortable-Windows-x64-full",
+  "clawpanel": {
+    "version": "0.18.5",
+    "repository": "qingchencloud/clawpanel"
+  },
+  "openclaw": {
+    "edition": "zh",
+    "version": "2026.6.11-zh.1",
+    "standaloneRepository": "qingchencloud/openclaw-standalone",
+    "standaloneTag": "v2026.6.11-zh.1",
+    "assetPattern": "*windows*x64*.zip"
+  },
+  "hermes": {
+    "version": "0.18.0",
+    "tag": "v2026.7.1",
+    "repositoryUrl": "https://github.com/NousResearch/hermes-agent.git",
+    "extras": [
+      "web"
+    ],
+    "python": "3.11"
+  },
+  "uv": {
+    "version": "0.7.12",
+    "url": "https://github.com/astral-sh/uv/releases/download/0.7.12/uv-x86_64-pc-windows-msvc.zip"
+  },
+  "git": {
+    "source": "git-for-windows-mingit-latest",
+    "apiUrl": "https://api.github.com/repos/git-for-windows/git/releases/latest",
+    "assetPattern": "MinGit-*-64-bit.zip",
+    "excludePattern": "*busybox*"
+  }
+}

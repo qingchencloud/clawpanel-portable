@@ -1,0 +1,53 @@
+name: release-portable
+
+on:
+  workflow_dispatch:
+    inputs:
+      panel_ref:
+        description: ClawPanel git ref to build
+        required: true
+        default: main
+      build_windows:
+        description: Build Windows x64 portable package
+        required: true
+        default: "true"
+
+jobs:
+  windows-x64:
+    if: ${{ inputs.build_windows == 'true' }}
+    runs-on: windows-latest
+    steps:
+      - name: Checkout portable builder
+        uses: actions/checkout@v4
+
+      - name: Checkout ClawPanel
+        uses: actions/checkout@v4
+        with:
+          repository: qingchencloud/clawpanel
+          ref: ${{ inputs.panel_ref }}
+          path: clawpanel
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clawpanel/package-lock.json
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Windows portable full package
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          .\scripts\build-windows-full.ps1 -ClawPanelRepo .\clawpanel -OutputDir .\output
+
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawpanel-portable-windows-x64
+          path: |
+            output/*.zip
+            output/*.sha256.json

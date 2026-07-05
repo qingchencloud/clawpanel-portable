@@ -46,12 +46,19 @@ if [[ ! -d "$CLAWPANEL_APP" ]]; then
   exit 1
 fi
 
-for cmd in curl tar gh jq shasum zip; do
+for cmd in curl tar jq shasum zip; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     echo "Required command not found: $cmd" >&2
     exit 1
   fi
 done
+# gh is optional: preferred (handles auth + convenient glob patterns), but the
+# OpenClaw standalone repo is public, so a missing/unauthenticated gh falls
+# back to the public REST API further down (download_github_asset).
+HAVE_GH="false"
+if command -v gh >/dev/null 2>&1; then
+  HAVE_GH="true"
+fi
 
 MANIFEST="$ROOT_DIR/manifests/macos-${ARCH}.json"
 if [[ ! -f "$MANIFEST" ]]; then
@@ -94,24 +101,52 @@ YAML
 
 download_file() {
   local url="$1" out="$2"
-  echo "Downloading: $url"
+  # Must go to stderr: download_github_asset() is invoked via command
+  # substitution ($(...)), so anything this prints to stdout would get
+  # concatenated onto its returned path (silently corrupting the caller's
+  # "$openclaw_archive" etc. into a multi-line string — this bit us during
+  # real-machine testing: tar received a two-line filename argument).
+  echo "Downloading: $url" >&2
   curl -fsSL --retry 3 -A "ClawPanelPortableBuilder" -o "$out" "$url"
 }
 
-# Downloads a single GitHub release asset matching a glob pattern via `gh`,
-# mirroring Download-GitHubAsset in build-windows-full.ps1 so both platforms
-# share the same manifest-driven asset resolution.
+# Downloads a single GitHub release asset matching a glob pattern, mirroring
+# Download-GitHubAsset in build-windows-full.ps1 so both platforms share the
+# same manifest-driven asset resolution.
+#
+# Prefers `gh release download` (handles private repos, real glob matching).
+# Falls back to the public REST API + curl when gh is missing or its stored
+# credentials are broken/expired — OpenClaw standalone is a public repo, so
+# asset listing and download work fine unauthenticated (subject to GitHub's
+# lower unauthenticated rate limit, ~60 req/hour/IP).
 download_github_asset() {
   local repo="$1" tag="$2" pattern="$3" dest="$4"
   mkdir -p "$dest"
-  gh release download "$tag" --repo "$repo" --pattern "$pattern" --dir "$dest" --clobber
-  local match
-  match="$(find "$dest" -maxdepth 1 -type f | head -1)"
-  if [[ -z "$match" ]]; then
-    echo "No GitHub release asset matched: $repo $tag $pattern" >&2
+  if [[ "$HAVE_GH" == "true" ]] && gh release download "$tag" --repo "$repo" --pattern "$pattern" --dir "$dest" --clobber 2>/dev/null; then
+    local match
+    match="$(find "$dest" -maxdepth 1 -type f | head -1)"
+    if [[ -n "$match" ]]; then
+      echo "$match"
+      return 0
+    fi
+  fi
+  echo "gh unavailable/failed, falling back to public GitHub API for $repo@$tag..." >&2
+  local regex asset_url filename
+  # Only translate the glob's "*"; asset names in practice don't contain other
+  # regex metacharacters that would cause a false match, and BSD sed (macOS)
+  # vs GNU sed disagree on `\&`-in-bracket-class escaping enough that a
+  # "proper" glob->regex escaper isn't worth the portability risk here.
+  regex="$(printf '%s' "$pattern" | sed 's/\*/.*/g')"
+  asset_url="$(curl -fsSL "https://api.github.com/repos/${repo}/releases/tags/${tag}" \
+    | jq -r --arg re "$regex" '.assets[] | select(.name | test($re)) | .browser_download_url' \
+    | head -1)"
+  if [[ -z "$asset_url" ]]; then
+    echo "No GitHub release asset matched via API fallback: $repo $tag $pattern" >&2
     exit 1
   fi
-  echo "$match"
+  filename="$(basename "$asset_url")"
+  download_file "$asset_url" "$dest/$filename"
+  echo "$dest/$filename"
 }
 
 # uv ships each platform archive with a single top-level dir (uv-<target>/uv);

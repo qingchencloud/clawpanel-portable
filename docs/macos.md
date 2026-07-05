@@ -22,7 +22,8 @@ wrapper 为相对路径可执行脚本 → 打包 zip + sha256。
 `NousResearch/hermes-agent` 仓库和一堆 Python 依赖，第一次验证目录结构/签名流程时
 建议先跳过，跑得快）。
 
-依赖（构建机需要预装）：`curl`、`tar`、`gh`（已登录）、`jq`、`shasum`、`zip`。
+依赖（构建机需要预装）：`curl`、`tar`、`jq`、`shasum`、`zip`。`gh` 可选——OpenClaw
+standalone 是公开仓库，`gh` 缺失或登录状态失效时会自动回退到公开 REST API + curl。
 
 ## 验收
 
@@ -76,18 +77,37 @@ notarization 凭据的情况下：
      不在这个仓库范围内，需要在 ClawPanel 主仓库的 Tauri 打包配置里做）。
   这一步需要真实的 Apple Developer 账号，本仓库目前没有相应凭据，留给有账号的人接手。
 
-### 3. Python venv 路径可迁移性
+### 3. Python venv 路径可迁移性 —— 已在真机验证 ✅
 
 `uv tool install` 生成的 venv 会在 `pyvenv.cfg` 里写入构建时的绝对路径。
 `build-macos-full.sh` 用和 Windows 相同的技巧规避：删除 uv 自动生成的
 `hermes`/`hermes-agent`/`hermes-acp` shim，改写成 shell wrapper，每次运行时
 根据 `$0` 动态算出当前 `ROOT`，重新生成 `pyvenv.cfg` 后再执行
-`hermes-agent/bin/python3`。这个技巧在 Windows 上已经跑通验证过；macOS 上
-逻辑对齐，但还没有在真实 Mac 上跑过 —— 发布前必须验证。
+`hermes-agent/bin/python3`。
+
+**2026-07-05 已在真实 Apple Silicon（M4，macOS 26.5）上跑通完整流程**：
+`build-macos-full.sh`（含真实 `uv tool install` 从
+`NousResearch/hermes-agent` 装 Hermes）成功产出便携包，`verify-macos.sh`
+四项真实调用（uv/git/hermes/openclaw）全部通过。并且把整个
+`ClawPanelPortable` 目录复制到完全不同的路径后重新验证依然全部通过——
+证明 pyvenv.cfg 动态重写技巧确实是路径无关的。
+
+验证过程中发现并修复了两个真实 bug（见 commit `554533c`）：
+- glob→正则转换的 sed 表达式在 BSD sed（macOS）上转义行为和 GNU sed 不一致，
+  转出的正则匹配不到任何资产；简化成只处理 `*`，规避 sed 方言差异。
+- 内部辅助函数的进度提示写到了 stdout，污染了被 `$(...)` 捕获的返回值，
+  导致传给 `tar` 的路径参数变成两行乱码；改为写 stderr。
 
 ### 4. 尚未做的事
 
-- CI（`.github/workflows/release-portable.yml`）目前只有 Windows job；
-  没有加 macOS job 是因为签名/公证凭据没有着落，直接发一个未签名 `.app` 到 Release
-  容易被当成"能用的正式包"，反而增加支持成本。等有 Apple Developer 凭据后再补。
+- 验证用的是一台已经装过 Xcode Command Line Tools 的 Mac，**没有验证"全新
+  Mac 没装过 CLT，第一次执行 git 弹系统安装对话框"这个首次体验**——缺口 1
+  依然需要有全新 Mac（或干净虚拟机）时补验证。
+- 签名/公证/Gatekeeper（缺口 2）仍未测试，需要 Apple Developer 凭据。
+- CI（`.github/workflows/release-portable.yml`）目前只有 Windows job 会自动
+  发布 Release；macOS job 已加（`workflow_dispatch` 手动 opt-in，产物只进
+  workflow artifact），但没有接入自动发布，因为签名/公证凭据没有着落，
+  直接发一个未签名 `.app` 到 Release 容易被当成"能用的正式包"，反而增加
+  支持成本。等有 Apple Developer 凭据后再补。
 - 没有做 arm64/x64 的 universal binary 合并，两个架构分别打包。
+- x64（Intel Mac）架构还没有真机验证过，本次验证的是 arm64。

@@ -54,7 +54,14 @@ try {
 
   New-Item -ItemType Directory -Force -Path $TargetRoot | Out-Null
   if (Get-Command robocopy -ErrorAction SilentlyContinue) {
-    & robocopy $inner $TargetRoot /MIR /NFL /NDL /NJH /NJS /NP | Out-Null
+    # /R:2 /W:2: robocopy's default is 1,000,000 retries with a 30s wait
+    # between each — a single problem file (locked, long path, USB write
+    # error) makes it hang for hours with zero indication of what's wrong.
+    # Fail fast instead; a real USB-drive test sat "stuck" for a long time
+    # before this was added (root cause was actually an oversized source
+    # tree — see build-windows-full.ps1's uv-cache cleanup — but robocopy
+    # should never silently retry-loop regardless of the cause).
+    & robocopy $inner $TargetRoot /MIR /NFL /NDL /NJH /NJS /NP /R:2 /W:2 | Out-Null
     if ($LASTEXITCODE -gt 7) {
       throw "robocopy failed with exit code $LASTEXITCODE"
     }

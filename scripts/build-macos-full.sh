@@ -279,6 +279,14 @@ install_hermes() {
   write_hermes_wrapper "$hermes_bin/hermes-agent" "run_agent" "main" "$uv_version" "$version_info"
   write_hermes_wrapper "$hermes_bin/hermes-acp" "acp_adapter.entry" "main" "$uv_version" "$version_info"
   xattr -cr "$hermes_tool_dir" 2>/dev/null || true
+
+  # uv's git checkout cache (runtimes/uv/cache/git-v0) is a pure build-time
+  # accelerator for future reinstalls on THIS SAME portable install; it's not
+  # needed for hermes-agent to run (already installed as a real venv above).
+  # On Windows this also hit MAX_PATH during a real USB-drive write test
+  # (deeply nested doc/i18n paths from the full git clone); clearing it here
+  # roughly halves the shipped package size on both platforms.
+  find "$uv_cache" -mindepth 1 -delete 2>/dev/null || true
 }
 
 if [[ "$SKIP_HERMES_BUILD" != "true" ]]; then

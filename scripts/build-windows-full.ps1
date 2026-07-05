@@ -223,6 +223,21 @@ function Install-Hermes {
     -FunctionName "main" `
     -UvVersion $Manifest.uv.version `
     -PythonVersionInfo $versionInfo
+
+  # uv's git checkout cache (runtimes/uv/cache/git-v0) is a pure build-time
+  # accelerator for future reinstalls on THIS SAME portable install; it is not
+  # needed for hermes-agent to run (already installed as a real venv above)
+  # and it is not safe to ship: a full git clone of hermes-agent includes
+  # deeply nested doc/i18n paths that exceed Windows' 260-char MAX_PATH once
+  # combined with any real destination prefix, which makes `robocopy` (used by
+  # write-usb-windows.ps1) hang retrying a file it can never copy — discovered
+  # via a real USB-drive write test that appeared "stuck" for many minutes.
+  # Clear the cache CONTENTS (keep the directory itself: UV_CACHE_DIR still
+  # points here for any future reinstall from within the portable app) and
+  # cuts shipped package size roughly in half.
+  if (Test-Path -LiteralPath $uvCache) {
+    Get-ChildItem -LiteralPath $uvCache -Force | Remove-Item -Recurse -Force -ErrorAction SilentlyContinue
+  }
 }
 
 function Write-HermesCmdWrapper {

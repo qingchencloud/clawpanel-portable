@@ -101,14 +101,22 @@ ClawPanelPortable-Windows-x64-full-v0.18.5.zip.sha256.json
 
 ## macOS 构建
 
-macOS 便携包需要额外处理 `.app` 签名、公证、quarantine 和可执行权限。首版脚本入口已经预留：
-
 ```bash
 ./scripts/build-macos-full.sh \
   --clawpanel-app /path/to/ClawPanel.app \
   --arch arm64 \
   --output ./output
 ```
+
+验收：
+
+```bash
+./scripts/verify-macos.sh --portable-root ./output/macos-arm64/ClawPanelPortable
+```
+
+macOS 版依赖系统自带的 Git（Xcode Command Line Tools），不像 Windows 会自动下载
+MinGit；`.app` 产出未签名未公证，正式对外分发前需要 Apple Developer 证书完成
+codesign + notarize。详见 [docs/macos.md](docs/macos.md)「已知缺口」。
 
 ## 维护原则
 

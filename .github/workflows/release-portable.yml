@@ -14,6 +14,14 @@ on:
         description: Build Windows x64 portable package
         required: true
         default: "true"
+      build_macos_arm64:
+        description: Build macOS arm64 portable package (unsigned, artifact only — not published to Release)
+        required: true
+        default: "false"
+      build_macos_x64:
+        description: Build macOS x64 portable package (unsigned, artifact only — not published to Release)
+        required: true
+        default: "false"
 
 permissions:
   contents: write
@@ -91,3 +99,80 @@ jobs:
           "@
           $notes | Set-Content -LiteralPath release-notes.md -Encoding UTF8
           gh release create $tag output/*.zip output/*.sha256.json --title "ClawPanel Portable $tag" --notes-file release-notes.md --latest
+
+  # macOS jobs are workflow_dispatch-only (never on tag push): the resulting
+  # .app is unsigned/unnotarized (see docs/macos.md), so it is never attached
+  # to a public GitHub Release automatically. Artifact download is for
+  # internal testing until Apple Developer signing credentials are wired up.
+  macos:
+    if: ${{ github.event_name == 'workflow_dispatch' && (inputs.build_macos_arm64 == 'true' || inputs.build_macos_x64 == 'true') }}
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            enabled: ${{ inputs.build_macos_arm64 }}
+          - arch: x64
+            enabled: ${{ inputs.build_macos_x64 }}
+    steps:
+      - name: Checkout portable builder
+        if: ${{ matrix.enabled == 'true' }}
+        uses: actions/checkout@v4
+
+      - name: Read portable manifest
+        if: ${{ matrix.enabled == 'true' }}
+        id: manifest
+        run: |
+          panel_ref="v$(jq -r '.clawpanel.version' manifests/macos-${{ matrix.arch }}.json)"
+          echo "panel_ref=$panel_ref" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout ClawPanel
+        if: ${{ matrix.enabled == 'true' }}
+        uses: actions/checkout@v4
+        with:
+          repository: qingchencloud/clawpanel
+          ref: ${{ inputs.panel_ref || steps.manifest.outputs.panel_ref }}
+          path: clawpanel
+
+      - name: Setup Node.js
+        if: ${{ matrix.enabled == 'true' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: clawpanel/package-lock.json
+
+      - name: Setup Rust
+        if: ${{ matrix.enabled == 'true' }}
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
+
+      - name: Build ClawPanel.app
+        if: ${{ matrix.enabled == 'true' }}
+        working-directory: clawpanel
+        run: |
+          npm ci
+          npm run tauri build -- --target ${{ matrix.arch == 'arm64' && 'aarch64-apple-darwin' || 'x86_64-apple-darwin' }}
+
+      - name: Build macOS portable full package
+        if: ${{ matrix.enabled == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          app_path=$(find clawpanel/src-tauri/target -maxdepth 5 -name "ClawPanel.app" -path "*/release/bundle/macos/*" | head -1)
+          if [ -z "$app_path" ]; then
+            echo "ClawPanel.app not found after tauri build" >&2
+            exit 1
+          fi
+          chmod +x scripts/build-macos-full.sh scripts/verify-macos.sh
+          ./scripts/build-macos-full.sh --clawpanel-app "$app_path" --arch ${{ matrix.arch }} --output ./output
+
+      - name: Upload portable package (artifact only, unsigned)
+        if: ${{ matrix.enabled == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: clawpanel-portable-macos-${{ matrix.arch }}-unsigned
+          path: |
+            output/*.zip
+            output/*.sha256.json
